@@ -1,0 +1,155 @@
+html_content = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bank Card Malware Scanner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#0b0f19] text-slate-100 min-h-screen p-4 font-mono flex flex-col justify-between select-none">
+  
+  <div class="max-w-md w-full mx-auto space-y-4 pb-4">
+    
+    <!-- Pairing Code Section -->
+    <div class="text-center space-y-1 pt-2">
+      <div class="text-[10px] tracking-widest text-slate-400 uppercase font-semibold">Pairing Code</div>
+      <div id="pairingCodeDisplay" class="text-3xl font-bold tracking-[0.25em] text-white">5 5 1 8 2 1</div>
+      <div class="text-[11px] text-slate-400">Enter this code on the terminal device</div>
+    </div>
+
+    <!-- Central Scanner Graphic & Sensing Animation -->
+    <div class="relative flex flex-col items-center justify-center py-8">
+      <div class="absolute w-52 h-52 rounded-full border border-blue-500/10 animate-ping pointer-events-none"></div>
+      <div class="absolute w-40 h-40 rounded-full border border-blue-500/20 animate-pulse pointer-events-none"></div>
+      <div class="absolute w-28 h-28 rounded-full border border-blue-500/30"></div>
+      
+      <div class="relative w-20 h-20 rounded-2xl bg-[#131b2e] border border-blue-500/40 flex items-center justify-center shadow-2xl z-10 text-blue-400">
+        <svg class="w-9 h-9 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>
+        </svg>
+      </div>
+
+      <div class="mt-6 text-center z-10 space-y-1">
+        <h2 id="cardStateTitle" class="text-lg font-bold text-white tracking-wide">Card removed</h2>
+        <p id="cardStateSub" class="text-xs text-slate-400">Place the card back on the phone to continue</p>
+      </div>
+    </div>
+
+    <!-- Deep Scan Progress Module -->
+    <div class="bg-[#131b2e] border border-slate-800/80 rounded-2xl p-4 space-y-2.5 shadow-lg">
+      <div class="flex items-center justify-between text-xs">
+        <div class="flex items-center space-x-2 text-slate-300 font-semibold">
+          <span class="text-emerald-400 font-bold">✔</span>
+          <span class="tracking-wider text-[11px]">DEEP SCAN</span>
+        </div>
+        <span id="scanPercent" class="text-emerald-400 font-bold">0%</span>
+      </div>
+      <div class="text-xs text-slate-200 font-medium" id="scanStatusText">Reading application data</div>
+      
+      <div class="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
+        <div id="progressBar" class="bg-blue-500 h-full w-[10%] transition-all duration-300"></div>
+      </div>
+      
+      <div class="flex justify-between text-[10px] text-slate-400 pt-0.5 font-mono">
+        <span id="scanTimer">00:16 / 30:00</span>
+        <span class="text-blue-400 cursor-pointer hover:underline" onclick="toggleScanSimulation()">Simulate</span>
+      </div>
+    </div>
+
+    <!-- Diagnostics Panel -->
+    <div class="bg-[#131b2e] border border-slate-800/80 rounded-2xl p-4 space-y-2 shadow-lg">
+      <div class="text-[10px] tracking-widest text-slate-400 font-semibold uppercase">Diagnostics</div>
+      <div class="grid grid-cols-3 text-xs gap-y-2 pt-1">
+        <span class="text-slate-400">Technology</span>
+        <span class="col-span-2 text-white font-mono" id="diagTech">ISO-DEP</span>
+        
+        <span class="text-slate-400">Identifier</span>
+        <span class="col-span-2 text-white font-mono" id="diagId">5C193445</span>
+        
+        <span class="text-slate-400">Application</span>
+        <span class="col-span-2 text-white font-mono text-[11px]" id="diagApp">A00000038420</span>
+        
+        <span class="text-slate-400">NDEF</span>
+        <span class="col-span-2 text-slate-500 font-mono" id="diagNdef">-</span>
+      </div>
+    </div>
+
+    <!-- Footer Action Buttons -->
+    <div class="grid grid-cols-3 gap-3 pt-2">
+      <button onclick="triggerAction('activity')" class="bg-[#131b2e] hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-semibold py-3 rounded-2xl transition shadow-md">Show activity</button>
+      <button onclick="triggerAction('copy')" class="bg-[#131b2e] hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-semibold py-3 rounded-2xl transition shadow-md">Copy</button>
+      <button onclick="triggerAction('share')" class="bg-[#131b2e] hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-semibold py-3 rounded-2xl transition shadow-md">Share</button>
+    </div>
+
+  </div>
+
+  <script>
+    let pairingCode = '551821';
+    let ws = null;
+    let isScanning = false;
+
+    async function initSession() {
+      try {
+        const res = await fetch('/api/new-code');
+        if (res.ok) {
+          const data = await res.json();
+          pairingCode = data.pairing_code;
+          document.getElementById('pairingCodeDisplay').textContent = pairingCode.split('').join(' ');
+        }
+        
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(proto + '//' + window.location.host + '/ws/' + pairingCode);
+        
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'SCAN_COMPLETE') {
+            document.getElementById('cardStateTitle').textContent = 'Card Connected';
+            document.getElementById('cardStateSub').textContent = 'ID Verified: ' + msg.identifier;
+          }
+        };
+      } catch (err) {
+        console.log('Running offline mode.');
+      }
+    }
+
+    function toggleScanSimulation() {
+      if (isScanning) return;
+      isScanning = true;
+      let progress = 10;
+      document.getElementById('cardStateTitle').textContent = 'Sensing NFC Chip';
+      document.getElementById('cardStateSub').textContent = 'Reading application files...';
+      
+      const interval = setInterval(() => {
+        progress += 10;
+        document.getElementById('scanPercent').textContent = progress + '%';
+        document.getElementById('progressBar').style.width = progress + '%';
+        
+        if (progress >= 100) {
+          clearInterval(interval);
+          isScanning = false;
+          document.getElementById('cardStateTitle').textContent = 'Card Active';
+          document.getElementById('cardStateSub').textContent = 'ISO-DEP Handshake Successful';
+          document.getElementById('scanStatusText').textContent = 'Data verification completed';
+        }
+      }, 250);
+    }
+
+    function triggerAction(action) {
+      if (action === 'copy') {
+        navigator.clipboard.writeText(pairingCode);
+        alert('Pairing code copied to clipboard!');
+      } else if (action === 'share') {
+        alert('Pairing Code: ' + pairingCode);
+      } else {
+        alert('ISO-DEP diagnostic log: Channel open and listening.');
+      }
+    }
+
+    initSession();
+  </script>
+</body>
+</html>"""
+
+with open('index.html', 'w', encoding='utf-8') as f:
+    f.write(html_content)
+print('SUCCESS: index.html generated cleanly via make_html.py!')
